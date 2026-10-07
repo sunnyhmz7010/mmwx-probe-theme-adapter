@@ -14,6 +14,7 @@ export interface BuildPlan {
 }
 
 export interface LoadedTheme {
+  kind?: 'komari' | 'monitor'
   directory: string
   indexPath: string
   title?: string

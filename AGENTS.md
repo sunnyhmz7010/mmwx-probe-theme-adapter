@@ -1,8 +1,8 @@
-# MMWX Probe Komari Theme Adapter 项目 AGENTS.md
+# MMWX Probe Theme Adapter 项目 AGENTS.md
 
 ## 项目说明
 
-将 MMWX independent-probe 数据适配为 Komari 公开只读 API，并在运行时加载指定 Komari 主题，对外提供可直接访问的主题页面。
+将 MMWX independent-probe 数据适配为 Komari 或 Monitor 公开只读 API，并在运行时根据主题清单加载指定主题，对外提供可直接访问的主题页面。MMWX 始终是唯一数据源。
 
 ## 技术栈
 
@@ -19,14 +19,14 @@
 npm install                 # 安装依赖
 npm run build               # 编译 TypeScript
 npm test                    # 编译并运行全部 node:test 测试
-docker build -t mmwx-komari-adapter .  # 构建本地镜像
+docker build -t mmwx-probe-theme-adapter .  # 构建本地镜像
 ```
 
 ## 发布惯例
 
 - 版本号遵循 semver（`major.minor.patch`）
 - 发版步骤：同步 `package.json` 与 `package-lock.json` 版本 → `npm test` → 提交并推送 `main` → 创建并推送 `vX.Y.Z` 标签 → `gh release create --verify-tag` 写中英双语发布说明
-- 镜像自动构建并推送到 `ghcr.io/sunnyhmz7010/mmwx-probe-komari-theme-adapter`
+- 镜像自动构建并推送到 `ghcr.io/sunnyhmz7010/mmwx-probe-theme-adapter`
 - Docker workflow 只在 `v*` 标签推送时发布镜像，生成 semver、major/minor、major 和 `latest` 标签；`main` 分支推送不发布镜像
 - 发布历史维护在 GitHub Releases，不提交 `CHANGELOG.md`
 - 首次发布 GHCR 镜像后，若公开拉取失败，在 GitHub Package settings 中确认容器包可见性为 Public，并确保仓库 Actions 对该 package 有写权限
@@ -58,6 +58,9 @@ src/mmwx/types.ts    ← MMWX 探针数据类型
 src/komari/mapper.ts ← MMWX 数据到 Komari 形态的映射
 src/komari/service.ts← 查询和历史数据服务
 src/komari/types.ts  ← Komari 兼容层数据类型
+src/monitor/mapper.ts ← MMWX 到 Monitor 公开节点快照的映射
+src/monitor/service.ts ← Monitor 历史查询、节点身份与下标缓存隔离
+src/mmwx/identity.ts ← 节点身份识别，供 Monitor ID 和历史缓冲共用
 src/http/api.ts      ← Komari 兼容 API 与 RPC2 路由
 src/http/server.ts   ← HTTP server 与 WebSocket 路由
 src/http/static.ts   ← 静态主题资源、SPA fallback 与内置资源兜底
@@ -75,7 +78,7 @@ static-assets/       ← 内置国旗与 OS 图标资源（来源 junimo，Apach
 | --- | --- | --- | --- |
 | `MMWX_ORIGIN` | 是 | - | MMWX 控制端地址 |
 | `PROBE_TOKEN` | 是 | - | MMWX independent-probe Token |
-| `THEME_REPO` | 是 | - | Komari 主题 GitHub HTTPS 仓库地址 |
+| `THEME_REPO` | 是 | - | Komari 或 Monitor 主题 GitHub HTTPS 仓库地址，按清单自动识别 |
 | `THEME_REF` | 否 | `main` | 主题分支、标签或 commit |
 | `THEME_GIT_PROXY` | 否 | 空（直连） | GitHub 克隆代理前缀，如 `https://gh-proxy.com`，克隆地址拼为 `<代理>/https://github.com/owner/repo.git` |
 | `ADMIN_TOKEN` | 否 | - | `/admin` 管理员验证 Token；未设置时禁用验证和主题配置写入 |

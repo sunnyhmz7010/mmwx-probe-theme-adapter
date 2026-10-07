@@ -1,7 +1,7 @@
 services:
-  mmwx-komari-adapter:
-    image: ghcr.io/sunnyhmz7010/mmwx-probe-komari-theme-adapter:latest
-    container_name: mmwx-komari-adapter
+  mmwx-probe-theme-adapter:
+    image: ghcr.io/sunnyhmz7010/mmwx-probe-theme-adapter:latest
+    container_name: mmwx-probe-theme-adapter
     restart: unless-stopped
     ports:
       - "8080:8080"

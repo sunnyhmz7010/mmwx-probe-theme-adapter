@@ -3,6 +3,19 @@ import path from 'node:path'
 
 export type ThemeSettings = Record<string, unknown>
 
+export function validateMonitorSettings(settings: ThemeSettings, config: unknown[]): void {
+  for (const item of config) {
+    if (!isRecord(item) || typeof item.key !== 'string' || !(item.key in settings)) continue
+    const value = settings[item.key]
+    let valid = typeof value === 'string'
+    if (item.type === 'boolean') valid = typeof value === 'boolean'
+    if (item.type === 'number') valid = typeof value === 'number' && Number.isFinite(value)
+      && (typeof item.min !== 'number' || value >= item.min) && (typeof item.max !== 'number' || value <= item.max)
+    if (item.type === 'select') valid = Array.isArray(item.options) && item.options.some(option => isRecord(option) && option.value === value)
+    if (!valid) throw Object.assign(new Error(`Invalid theme setting: ${item.key}`), { statusCode: 400 })
+  }
+}
+
 function isRecord(value: unknown): value is ThemeSettings {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }

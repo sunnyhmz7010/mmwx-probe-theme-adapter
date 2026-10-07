@@ -1,6 +1,7 @@
 import type { MmwxMetricPoint, MmwxProbeSeriesBucket, MmwxSystemMetricSeries, MmwxSystemSeriesPoint, ProbeAppearance, ProbeBucket, ProbeDailyTraffic, ProbePayload, ProbeReturnRoute, ProbeSeriesPayload, ProbeServer, SeriesQuery } from '../mmwx/types.js'
 import type { ProbeHistoryBuffer } from '../mmwx/history-buffer.js'
 import type { FileThemeSettingsStore } from '../theme/settings-store.js'
+import { validateMonitorSettings } from '../theme/settings-store.js'
 import { ADAPTER_VERSION } from '../version.js'
 import {
   toKomariLoadRecords,
@@ -705,6 +706,7 @@ export class KomariDataService {
       if (point.cpu !== undefined) record.cpu = point.cpu
       if (point.ram !== undefined) record.ram = point.ram
       if (point.mem_total !== undefined) record.mem_total = point.mem_total
+      if (point.disk !== undefined) record.disk = point.disk
       if (point.load !== undefined) record.load = point.load
       if (point.net_out !== undefined) record.net_out = point.net_out
       if (point.net_in !== undefined) record.net_in = point.net_in
@@ -760,6 +762,7 @@ export class KomariDataService {
 
   public async updateThemeSettings(settings: Record<string, unknown>): Promise<Record<string, unknown>> {
     if (!this.themeSource?.themeSettingsStore) throw Object.assign(new Error('theme settings store is not configured'), { statusCode: 403 })
+    if (Array.isArray(this.themeSource.themeManifest?.config)) validateMonitorSettings(settings, this.themeSource.themeManifest.config)
     await this.themeSource.themeSettingsStore.write(settings)
     return await this.resolveThemeSettings()
   }

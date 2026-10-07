@@ -5,6 +5,7 @@ import type { KomariDataService } from '../komari/service.js'
 import type { SeriesQuery } from '../mmwx/types.js'
 import type { KomariMeInfo } from '../komari/types.js'
 import { noopLogger, type Logger } from '../log.js'
+import type { MonitorDataService } from '../monitor/service.js'
 
 export interface ApiRouter {
   handle(request: IncomingMessage, response: ServerResponse): Promise<boolean>
@@ -13,6 +14,8 @@ export interface ApiRouter {
 export interface ApiRouterOptions {
   adminToken?: string
   logger?: Logger
+  monitor?: MonitorDataService
+  themeShort?: string
 }
 
 type Query = Record<string, string>
@@ -179,6 +182,21 @@ export function createApiRouter(service: KomariDataService, options: ApiRouterOp
         }
 
         if (request.method !== 'GET') return methodNotAllowed(response)
+        if (options.monitor) {
+          if (url.pathname === '/api/nodes') return json(response, 200, await options.monitor.getSnapshot())
+          if (url.pathname === '/api/me') {
+            const pub = await service.getPublicSettings()
+            return json(response, 200, {
+              authed: Boolean(getAdminSessionMe(request, options.adminToken)),
+              site_name: pub.sitename, public_page: true, github: false,
+            })
+          }
+          const history = url.pathname.match(/^\/api\/nodes\/([^/]+)\/metrics$/)
+          if (history) return json(response, 200, await options.monitor.getHistory(history[1], url.searchParams))
+          if (url.pathname === `/api/themes/${encodeURIComponent(options.themeShort ?? '')}/config`) {
+            return json(response, 200, await service.getThemeSettings())
+          }
+        }
         if (url.pathname === '/api/probe') {
           return json(response, 200, await service.getRawProbePayload())
         }

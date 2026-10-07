@@ -101,7 +101,7 @@ test('MMWX client opens the fixed upstream WebSocket with the probe token header
     })
   })
 
-  server.listen(0)
+  server.listen(0, '127.0.0.1')
   await once(server, 'listening')
   const address = server.address()
   assert.ok(address && typeof address === 'object')

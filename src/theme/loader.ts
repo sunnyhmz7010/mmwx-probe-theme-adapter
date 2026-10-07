@@ -9,6 +9,7 @@ import type { LoadedTheme, ThemeSource } from './types.js'
 
 interface ThemeManifest {
   short?: unknown
+  config?: unknown
   configuration?: unknown
   [key: string]: unknown
 }
@@ -64,7 +65,7 @@ async function readThemeDocumentTitle(indexPath: string): Promise<string | undef
 function manifestThemeSettings(manifest: ThemeManifest | null): Record<string, unknown> | null {
   if (!manifest) return null
   const configuration = isRecord(manifest.configuration) ? manifest.configuration : undefined
-  const rawData = configuration?.data
+  const rawData = manifest.config ?? configuration?.data
   if (!Array.isArray(rawData)) {
     if (isRecord(rawData)) return rawData
     return null
@@ -84,18 +85,26 @@ function manifestThemeSettings(manifest: ThemeManifest | null): Record<string, u
   return settings
 }
 
-async function readThemeManifest(repoDir: string): Promise<ThemeManifest | null> {
-  const manifestPath = path.join(repoDir, 'komari-theme.json')
-  try {
-    const raw = await readFile(manifestPath, 'utf8')
-    return JSON.parse(raw) as ThemeManifest
-  } catch (error) {
-    if (error instanceof SyntaxError) throw new Error('Theme komari-theme.json is not valid JSON')
-    return null
+async function readThemeManifest(repoDir: string): Promise<{ kind: 'komari' | 'monitor'; manifest: ThemeManifest | null }> {
+  for (const [kind, filename] of [['komari', 'komari-theme.json'], ['monitor', 'theme.json']] as const) {
+    try {
+      const manifest: unknown = JSON.parse(await readFile(path.join(repoDir, filename), 'utf8'))
+      if (!isRecord(manifest)) throw new Error(`Theme ${filename} must be an object`)
+      if (kind === 'monitor' && (!stringOrUndefined(manifest.short) || !Array.isArray(manifest.config))) {
+        throw new Error('Monitor theme.json must declare short and config')
+      }
+      return { kind, manifest }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue
+      if (error instanceof SyntaxError) throw new Error(`Theme ${filename} is not valid JSON`)
+      throw error
+    }
   }
+  return { kind: 'komari', manifest: null }
 }
 
 function themeConfigurationSummary(manifest: ThemeManifest | null): { configuration: string; fields: number } {
+  if (Array.isArray(manifest?.config)) return { configuration: 'managed', fields: manifest.config.length }
   const configuration = isRecord(manifest?.configuration) ? manifest.configuration : undefined
   if (!configuration) return { configuration: 'none', fields: 0 }
   const type = stringOrUndefined(configuration.type)?.toLowerCase() || 'managed'
@@ -103,9 +112,10 @@ function themeConfigurationSummary(manifest: ThemeManifest | null): { configurat
   return { configuration: type, fields: Array.isArray(data) ? data.length : isRecord(data) ? Object.keys(data).length : 0 }
 }
 
-export async function readThemeMetadata(repoDir: string): Promise<{ short?: string; manifest: Record<string, unknown> | null; themeSettings: Record<string, unknown> | null }> {
-  const manifest = await readThemeManifest(repoDir)
+export async function readThemeMetadata(repoDir: string): Promise<{ kind: 'komari' | 'monitor'; short?: string; manifest: Record<string, unknown> | null; themeSettings: Record<string, unknown> | null }> {
+  const { kind, manifest } = await readThemeManifest(repoDir)
   return {
+    kind,
     short: stringOrUndefined(manifest?.short),
     manifest,
     themeSettings: manifestThemeSettings(manifest),
@@ -131,6 +141,7 @@ export async function loadTheme(config: AppConfig, logger: Logger = createLogger
     const metadata = await readThemeMetadata(repoDir)
     logger.info('主题配置声明已读取', {
       short: metadata.short || 'unknown',
+      kind: metadata.kind,
       ...themeConfigurationSummary(metadata.manifest),
     })
     const plan = await detectBuildPlan(repoDir)
@@ -155,6 +166,7 @@ export async function loadTheme(config: AppConfig, logger: Logger = createLogger
     logger.info('主题加载完成', { directory: currentDir, indexPath: path.join(currentDir, 'index.html') })
     return {
       directory: currentDir,
+      kind: metadata.kind,
       indexPath: path.join(currentDir, 'index.html'),
       title,
       short: metadata.short,

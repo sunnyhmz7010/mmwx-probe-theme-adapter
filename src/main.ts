@@ -9,6 +9,7 @@ import { KomariDataService } from './komari/service.js'
 import { createLogger, logError, logInfo } from './log.js'
 import { loadTheme } from './theme/loader.js'
 import { FileThemeSettingsStore } from './theme/settings-store.js'
+import { MonitorDataService } from './monitor/service.js'
 
 const HISTORY_FLUSH_INTERVAL_MS = 5 * 60 * 1000
 
@@ -32,7 +33,9 @@ export async function start(): Promise<ServerHandle> {
   // 采样层已常驻，主题加载或监听失败时必须释放连接与定时器，避免进程挂住不退出。
   try {
     const theme = await loadTheme(config, logger)
-    const themeSettingsStore = new FileThemeSettingsStore(THEME_SETTINGS_PATH)
+    const themeSettingsStore = new FileThemeSettingsStore(theme.kind === 'monitor'
+      ? THEME_SETTINGS_PATH.replace('.json', `-monitor-${encodeURIComponent(theme.short!)}.json`)
+      : THEME_SETTINGS_PATH)
     const service = new KomariDataService(hub, {
       ...theme.source,
       themeTitle: theme.title,
@@ -41,8 +44,9 @@ export async function start(): Promise<ServerHandle> {
       themeSettingsStore,
       themeManifest: theme.manifest,
     }, historyBuffer)
-    const api = createApiRouter(service, { adminToken: config.adminToken, logger })
-    const server = createHttpServer(config, theme, api, hub, logger)
+    const monitor = theme.kind === 'monitor' ? new MonitorDataService(hub, historyBuffer) : undefined
+    const api = createApiRouter(service, { adminToken: config.adminToken, logger, monitor, themeShort: theme.short })
+    const server = createHttpServer(config, theme, api, hub, logger, undefined, monitor)
 
     // 历史采样缓冲定时落盘（unref：不阻止停机时的正常退出）。
     const historyFlushTimer = setInterval(() => {

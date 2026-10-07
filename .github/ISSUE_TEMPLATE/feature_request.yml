@@ -23,7 +23,7 @@ body:
     id: proposal
     attributes:
       label: Expected Improvement / 期望改进
-      description: What would you like MMWX Probe Komari Theme Adapter to do? / 你希望 MMWX Probe Komari Theme Adapter 怎么做？
+      description: What would you like MMWX Probe Theme Adapter to do? / 你希望 MMWX Probe Theme Adapter 怎么做？
       placeholder: Describe the feature or behavior you want. / 描述你希望新增的功能或行为。
 
   - type: textarea

@@ -1,5 +1,5 @@
 name: Bug Report / 缺陷反馈
-description: Report a reproducible bug in MMWX Probe Komari Theme Adapter / 提交可复现的问题
+description: Report a reproducible bug in MMWX Probe Theme Adapter / 提交可复现的问题
 title: "[Bug] "
 labels:
   - bug

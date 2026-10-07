@@ -1,20 +1,20 @@
 <div align="center">
-  <h1>MMWX Probe Komari Theme Adapter</h1>
-  <p>将妙妙屋 X 主控探针数据转换为 Komari 主题可读的只读探针前端，集成代理、兼容转换与主题加载。</p>
+  <h1>MMWX Probe Theme Adapter</h1>
+  <p>以妙妙屋 X 为唯一数据源，驱动 Komari 和 Monitor 主题页面。</p>
 </div>
 
 <p align="center">
-  <a href="https://github.com/sunnyhmz7010/mmwx-probe-komari-theme-adapter/releases"><img src="https://img.shields.io/github/v/release/sunnyhmz7010/mmwx-probe-komari-theme-adapter?label=Release&color=3b82f6" alt="Release" /></a>
-  <a href="https://github.com/sunnyhmz7010/mmwx-probe-komari-theme-adapter/blob/main/LICENSE"><img src="https://img.shields.io/github/license/sunnyhmz7010/mmwx-probe-komari-theme-adapter?color=10b981" alt="License" /></a>
+  <a href="https://github.com/sunnyhmz7010/mmwx-probe-theme-adapter/releases"><img src="https://img.shields.io/github/v/release/sunnyhmz7010/mmwx-probe-theme-adapter?label=Release&color=3b82f6" alt="Release" /></a>
+  <a href="https://github.com/sunnyhmz7010/mmwx-probe-theme-adapter/blob/main/LICENSE"><img src="https://img.shields.io/github/license/sunnyhmz7010/mmwx-probe-theme-adapter?color=10b981" alt="License" /></a>
 </p>
 
 ---
 
 ## ✨ 为什么做这个项目
 
-MMWX Probe 以 Cloudflare Worker 的形式提供 React 静态页面、只读 API 代理和 WebSocket 代理，但内置主题有限。本项目通过 Komari 兼容转换层，让妙妙屋 X 探针数据可以驱动 Komari 生态中的丰富主题，并把固定的探针代理、WebSocket 实时流和主题页面整合到同一个对外地址下，访客只接触探针域名，无需直接访问主控域名。
+MMWX Probe 以 Cloudflare Worker 的形式提供 React 静态页面、只读 API 代理和 WebSocket 代理，但内置主题有限。本项目通过 Komari 和 Monitor 兼容转换层，让妙妙屋 X 探针数据可以驱动两个生态中的丰富主题，并把固定的探针代理、WebSocket 实时流和主题页面整合到同一个对外地址下，访客只接触探针域名，无需直接访问主控域名。
 
-它适合已经部署独立探针的主控，又希望用 Docker 快速部署公开探针页面、复用 Komari 主题展示效果的场景。
+它适合已经部署独立探针的主控，又希望用 Docker 快速部署公开探针页面、复用 Komari 或 Monitor 主题展示效果的场景。
 
 ⚠️ **免责声明**：
 
@@ -27,8 +27,9 @@ MMWX Probe 以 Cloudflare Worker 的形式提供 React 静态页面、只读 API
 
 - 固定探针代理：仅代理 `/api/probe`、`/api/series`、`/api/stream` 到妙妙屋 X 主控对应路径，不接受访客指定上游地址
 - Komari 公开只读兼容层：基于标准探针数据做结构转换，生成常见 Komari 主题需要的 `/api/public`、`/api/nodes`、`/api/records/*` 和部分 `/api/rpc2` 只读方法
+- Monitor 公开只读兼容层：支持 monitor-probe 主题的节点快照、实时推送、历史图表和主题配置；数据仍全部来自 mmwx，无需部署 Monitor 后端
 - 运行时主题加载：启动时从指定 Git 仓库拉取主题，自动识别静态主题或前端构建型主题，并发布校验后的构建产物
-- 主题配置管理：保留 `/admin` 原有入口；支持 `komari-theme.json` 托管配置主题，也兼容通过 `/?view=theme-manage` 提供前端配置页的主题
+- 主题配置管理：保留 `/admin` 原有入口；支持 `komari-theme.json` 和 Monitor `theme.json` 托管配置主题，也兼容通过 `/?view=theme-manage` 提供前端配置页的主题
 - 历史与实时数据：`/api/series` 提供延迟、丢包率和系统指标历史，`/api/stream` 代理主控实时探针 WebSocket
 - 主控降载：通过共享流中继维护一条常驻的到主控探针 WebSocket（7x24 常驻采样，不依赖访客在线），广播给所有访客并复用最近快照帧，访客数增加不再按比例增加主控连接与实时查询
 - 探针数据保留：`/api/probe` 保留服务器状态、系统指标、流量周期、每日流量、续费信息和回程路由等主控字段
@@ -42,7 +43,7 @@ MMWX Probe 以 Cloudflare Worker 的形式提供 React 静态页面、只读 API
 - 主控具有可由容器访问的 HTTPS 地址
 - 一台能访问妙妙屋 X 主控和 GitHub 的 VPS、NAS 或本地 Docker 环境
 - Docker 与 Docker Compose
-- 一个可公开拉取的 Komari 主题 GitHub 仓库
+- 一个可公开拉取的 Komari 或 Monitor 主题 GitHub 仓库
 - 常驻 CPU 低于单核 5%，内存 100~200MB，磁盘为镜像本体数百 MB 加约 6MB 历史缓冲（每 5 分钟覆盖写、不随时间累积，日均覆盖写入约 1.7GB）
 - 构建主题时内存与磁盘瞬时需求更高，建议预留 1GB 内存和 1GB 可用磁盘
 
@@ -52,9 +53,9 @@ MMWX Probe 以 Cloudflare Worker 的形式提供 React 静态页面、只读 API
 
 ```yaml
 services:
-  mmwx-komari-adapter:
-    image: ghcr.io/sunnyhmz7010/mmwx-probe-komari-theme-adapter:latest
-    container_name: mmwx-komari-adapter
+  mmwx-probe-theme-adapter:
+    image: ghcr.io/sunnyhmz7010/mmwx-probe-theme-adapter:latest
+    container_name: mmwx-probe-theme-adapter
     restart: unless-stopped
     ports:
       - "8080:8080"
@@ -76,13 +77,13 @@ docker compose up -d
 docker compose logs -f
 ```
 
-打开 `http://localhost:8080` 查看 Komari 主题页面。标准探针接口同时位于同一地址下，例如 `http://localhost:8080/api/probe`。
+打开 `http://localhost:8080` 查看主题页面。标准探针接口同时位于同一地址下，例如 `http://localhost:8080/api/probe`。
 
 ### 🖥️ 命令行方式
 
 ```bash
 docker run -d \
-  --name mmwx-komari-adapter \
+  --name mmwx-probe-theme-adapter \
   --restart unless-stopped \
   -p 8080:8080 \
   -e MMWX_ORIGIN="https://panel.example.com" \
@@ -91,17 +92,17 @@ docker run -d \
   -e THEME_REF="main" \
   -e THEME_GIT_PROXY="" \
   -e ADMIN_TOKEN="replace-with-random-admin-token" \
-  ghcr.io/sunnyhmz7010/mmwx-probe-komari-theme-adapter:latest
+  ghcr.io/sunnyhmz7010/mmwx-probe-theme-adapter:latest
 ```
 
 ### 🛠️ 自行构建镜像
 
 ```bash
-git clone https://github.com/sunnyhmz7010/mmwx-probe-komari-theme-adapter.git
-cd mmwx-probe-komari-theme-adapter
-docker build -t mmwx-komari-adapter .
+git clone https://github.com/sunnyhmz7010/mmwx-probe-theme-adapter.git
+cd mmwx-probe-theme-adapter
+docker build -t mmwx-probe-theme-adapter .
 docker run -d \
-  --name mmwx-komari-adapter \
+  --name mmwx-probe-theme-adapter \
   --restart unless-stopped \
   -p 8080:8080 \
   -e MMWX_ORIGIN="https://panel.example.com" \
@@ -110,7 +111,7 @@ docker run -d \
   -e THEME_REF="main" \
   -e THEME_GIT_PROXY="" \
   -e ADMIN_TOKEN="replace-with-random-admin-token" \
-  mmwx-komari-adapter
+  mmwx-probe-theme-adapter
 ```
 
 如果使用 Docker Compose 本地构建，把 `compose.yaml` 中的 `image: ghcr.io/...` 换成 `build: .`，然后执行 `docker compose up -d --build`。
@@ -173,6 +174,43 @@ docker run -d \
 - `records.ping`
 - `records.load`
 
+### 🛰️ Monitor 主题
+
+使用 Monitor 主题时，在 Compose 中将 `THEME_REPO` 改成下面任一仓库，`THEME_REF` 使用 `main`：
+
+```yaml
+      - THEME_REPO=https://github.com/dongbo501/gloria-universe-monitor-theme
+```
+
+```yaml
+      - THEME_REPO=https://github.com/dongbo501/minimalist-probe-doraemon-theme
+```
+
+修改后重新创建容器：
+
+```bash
+docker compose up -d --force-recreate
+```
+
+适配器优先识别 `komari-theme.json`，否则识别包含 `short` 和 `config` 数组的 Monitor `theme.json`；没有这两种清单时沿用 Komari 模式。每个实例加载一个主题，`/api/nodes` 和 `/api/me` 的响应格式随当前主题协议切换。
+
+| Monitor 接口 | 支持内容 |
+| --- | --- |
+| `GET /api/me` | mmwx 站点名称、适配器管理员会话状态 |
+| `GET /api/nodes` | `{ nodes: [...] }` 格式的公开节点快照 |
+| `WS /api/ws` | 连接即发送快照，随后随 mmwx 采样帧推送；复用单条上游连接 |
+| `GET /api/nodes/{id}/metrics` | CPU、内存、磁盘、网速及 Ping 历史；支持 `hours`、`points`、`series=metrics\|ping` |
+| `GET /api/themes/{short}/config` | 当前主题默认设置与已保存配置合并后的对象 |
+
+兼容边界：
+
+- 历史最多返回最近 **24 小时**实际数据；主题内置的 7 天或 90 天选项不会扩大 mmwx 的历史覆盖范围。`points` 限制为 60–1440，超出时抽取真实样本，不插值补点，也不伪造峰值或延迟区间。
+- Ping 的 `loss` 使用百分比；窗口汇总由可用样本平均估算，不等同于 Monitor 原生后端按原始探测次数加权的精确丢包率。
+- 节点 ID 从 mmwx 的 `id`、其次 `host`、其次 `name` 稳定生成。三者均缺失时才退回列表位置；无 ID 的节点改名可能改变身份，重复身份会报错。隐藏节点不进入 Monitor 列表或历史接口。
+- `month_rx/month_tx` 表示 mmwx **当前计费周期**用量，可能不是自然月；`total_rx/total_tx` 是上游提供的累计计数，可能在重启后重置，并非 Monitor 自安装以来的累计值。
+- 缺失指标省略，离线节点 `metrics` 为 `null`；不提供 Monitor 的节点管理、远程命令或 GitHub 登录能力。第三方主题可能自行把缺失值显示为零。
+- Monitor 配置通过现有 `/admin` 保存，按主题 `short` 隔离；写入验证字段类型、数字范围及选项值。容器重建仍遵循本项目运行目录数据随容器删除的约定。
+
 ### 🎨 主题配置
 
 需要修改主题设置时，打开适配器的管理页：
@@ -219,6 +257,8 @@ theme-market/main/v1.json` 显示的主题均可正常安装。
 | `https://github.com/qwer-xyz/komari-theme-zen` | main | ✅ | ✅ 全部支持 | 有配置项，已兼容 |
 | `https://github.com/nuomiiiii/nezha` | main | ✅ | ✅ 全部支持 | 有配置项，已兼容 |
 
+Monitor 主题已使用模拟 mmwx 数据完成本地构建及浏览器联调：Gloria Universe `93f0acc`、Doraemon `f340e11`。覆盖首页、节点详情、历史图表、连续 WebSocket 更新和配置保存后回读；未连接实际主控，兼容范围见上文 Monitor 主题说明。
+
 > ℹ️ **上游未提供字段说明**：妙妙屋 X 主控接口（`/api/public/probe-servers` 与 `metric=system` 历史序列）不返回部分字段，映射层按「能省略则省略、否则 `unknown`、最后才 0」处理：Swap 用量、GPU、温度、进程数、权重、分组、标签、隐藏标记、自动续费、创建/更新时间等直接省略，Komari 主题按「无数据」处理；虚拟化、GPU 名称等字符串字段显示 `unknown`。这是上游数据源限制，非本适配器可补齐；若主控后续提供这些字段，映射层（`src/komari/mapper.ts`）会立即生效，无需改动。
 
 ### 📋 环境变量
@@ -227,7 +267,7 @@ theme-market/main/v1.json` 显示的主题均可正常安装。
 | --- | --- | --- | --- |
 | `MMWX_ORIGIN` | 是 | - | 妙妙屋 X 主控地址。生产环境必须使用 HTTPS；仅 `localhost` 和 `127.0.0.1` 允许 HTTP |
 | `PROBE_TOKEN` | 是 | - | 主控“系统设置 → 探针”生成的独立探针访问密钥，仅作为 `X-MMwx-Probe-Token` 转发给主控 |
-| `THEME_REPO` | 是 | - | Komari 主题 GitHub HTTPS 仓库地址，例如 `https://github.com/example/komari-theme` |
+| `THEME_REPO` | 是 | - | Komari 或 Monitor 主题 GitHub HTTPS 仓库地址，按主题清单自动识别协议 |
 | `THEME_REF` | 否 | `main` | 主题仓库分支、标签或 commit。生产环境建议固定到 tag 或 commit |
 | `THEME_GIT_PROXY` | 否 | 空（直连） | GitHub 克隆加速代理前缀，例如 `https://gh-proxy.com`；实际克隆地址拼为 `<代理>/https://github.com/owner/repo.git`。仅接受 HTTPS（`localhost` 和 `127.0.0.1` 允许 HTTP），不支持带凭据、查询或片段的地址 |
 | `ADMIN_TOKEN` | 否 | - | `/admin` 管理员验证使用的 Token；未设置时禁用验证和主题配置写入。适配器仅保存签名会话 Cookie，配置仍保存在容器内部运行目录 |
@@ -268,13 +308,14 @@ theme-market/main/v1.json` 显示的主题均可正常安装。
 ## 🗂️ 项目结构
 
 ```
-mmwx-probe-komari-theme-adapter/
+mmwx-probe-theme-adapter/
 ├── src/                         # TypeScript 源码
 │   ├── main.ts                  # 服务入口、启动和关闭生命周期
 │   ├── config.ts                # 环境变量解析与安全校验
 │   ├── log.ts                   # 结构化日志与脱敏
 │   ├── http/                    # HTTP、静态资源和 API 路由
 │   ├── komari/                  # Komari 数据映射和服务层
+│   ├── monitor/                 # Monitor 节点、实时与历史协议兼容
 │   ├── mmwx/                    # MMWX independent-probe 客户端与流中继
 │   └── theme/                   # 主题仓库加载、构建和发布
 ├── static-assets/               # 内置国旗与系统图标资源兜底
@@ -300,7 +341,7 @@ mmwx-probe-komari-theme-adapter/
 npm install
 npm run build
 npm test
-docker build -t mmwx-komari-adapter .
+docker build -t mmwx-probe-theme-adapter .
 ```
 
 ## 🔐 安全报告

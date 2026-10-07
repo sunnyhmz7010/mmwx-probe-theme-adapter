@@ -1,4 +1,5 @@
 import type { ProbePayload, ProbeServer } from './types.js'
+import { serverIdentity } from './identity.js'
 
 // 历史采样缓冲：用实时快照帧在适配器内自建逐次密度历史，
 // 弥补主控 probe-series 只提供聚合桶（1h 视图约 5 分钟/桶）的粒度限制。
@@ -14,6 +15,7 @@ export interface BufferedLoadPoint {
   cpu?: number
   ram?: number
   mem_total?: number
+  disk?: number
   load?: number
   net_out?: number
   net_in?: number
@@ -85,9 +87,31 @@ function isLoadPoint(item: unknown): item is BufferedLoadPoint {
  */
 export class ProbeHistoryBuffer {
   private readonly clients = new Map<number, ClientSeries>()
+  private identities = new Map<number, string>()
 
   public ingest(payload: ProbePayload, at: Date = new Date()): void {
     const servers = Array.isArray(payload.servers) ? payload.servers : []
+    // 上游历史 API 使用列表下标；节点重排时让采样跟随身份，避免把上一台机器的历史拼进来。
+    const previous = new Map([...this.identities].map(([index, identity]) => [identity, this.clients.get(index)]))
+    const nextIdentities = new Map(servers.map((server, index) => [index, serverIdentity(server, index)]))
+    const ambiguous = new Set<string>()
+    for (const identities of [this.identities, nextIdentities]) {
+      const seen = new Set<string>()
+      for (const identity of identities.values()) {
+        if (seen.has(identity)) ambiguous.add(identity)
+        seen.add(identity)
+      }
+    }
+    if (this.clients.size > 0) {
+      this.clients.clear()
+      for (const [index, identity] of nextIdentities) {
+        // 重名旧节点身份不可靠，丢弃其旧样本；绝不能让两个下标共享同一缓冲对象。
+        if (ambiguous.has(identity)) continue
+        const series = previous.get(identity)
+        if (series) this.clients.set(index, series)
+      }
+    }
+    this.identities = nextIdentities
     const t = Math.floor(at.getTime() / 1000) * 1000
     for (let index = 0; index < servers.length; index += 1) {
       const server = servers[index]
@@ -123,13 +147,13 @@ export class ProbeHistoryBuffer {
         ping: [...series.ping].map(([name, points]) => [name, this.serializeSeries(points)]),
       }
     }
-    return { version: SNAPSHOT_VERSION, clients }
+    return { version: SNAPSHOT_VERSION, clients, identities: Object.fromEntries(this.identities) }
   }
 
   // 从落盘 JSON 恢复缓冲；按当前时间重整热/冷层归位并裁剪过期数据。形状不符时整体丢弃。
   public load(data: unknown, now: Date = new Date()): void {
     if (typeof data !== 'object' || data === null) return
-    const snapshot = data as { version?: unknown; clients?: unknown }
+    const snapshot = data as { version?: unknown; clients?: unknown; identities?: Record<string, unknown> }
     if (snapshot.version !== SNAPSHOT_VERSION) return
     if (typeof snapshot.clients !== 'object' || snapshot.clients === null) return
     const nowMs = now.getTime()
@@ -138,6 +162,8 @@ export class ProbeHistoryBuffer {
       if (!Number.isInteger(index) || index < 0) continue
       const series = this.deserializeClient(value, nowMs)
       if (series) this.clients.set(index, series)
+      const identity = snapshot.identities?.[key]
+      if (typeof identity === 'string') this.identities.set(index, identity)
     }
   }
 
@@ -194,6 +220,7 @@ export class ProbeHistoryBuffer {
     const cpu = firstFinite([server.cpu, server.cpu_pct])
     const ram = firstFinite([server.memory, server.mem_used])
     const memTotal = numberOrUndefined(server.mem_total)
+    const disk = numberOrUndefined(server.disk_used)
     const load = load1Of(server.load ?? server.loadavg)
     const netOut = firstFinite([server.upload, server.upload_speed])
     const netIn = firstFinite([server.download, server.download_speed])
@@ -202,6 +229,7 @@ export class ProbeHistoryBuffer {
     if (cpu !== undefined) point.cpu = cpu
     if (ram !== undefined) point.ram = ram
     if (memTotal !== undefined) point.mem_total = memTotal
+    if (disk !== undefined) point.disk = disk
     if (load !== undefined) point.load = load
     if (netOut !== undefined) point.net_out = netOut
     if (netIn !== undefined) point.net_in = netIn

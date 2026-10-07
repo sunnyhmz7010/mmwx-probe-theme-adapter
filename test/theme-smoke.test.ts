@@ -35,7 +35,7 @@ async function fixture(name: string): Promise<Fixture> {
 
 async function reservePort(): Promise<number> {
   const server = http.createServer()
-  server.listen(0)
+  server.listen(0, '127.0.0.1')
   await once(server, 'listening')
   const address = server.address()
   assert.ok(address && typeof address === 'object')

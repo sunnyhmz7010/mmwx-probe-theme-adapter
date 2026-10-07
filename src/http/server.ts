@@ -12,13 +12,14 @@ import { serveFavicon, serveStatic } from './static.js'
 import type { ProbeStreamRelay } from '../mmwx/stream-relay.js'
 import { ADAPTER_VERSION } from '../version.js'
 import { noopLogger, type Logger } from '../log.js'
+import type { MonitorDataService } from '../monitor/service.js'
 
 export interface ServerHandle {
   listen(): Promise<void>
   close(): Promise<void>
 }
 
-export function createHttpServer(config: AppConfig, theme: LoadedTheme, api: ApiRouter, hub: ProbeStreamRelay, logger: Logger = noopLogger, listenPort: number = HTTP_PORT): ServerHandle {
+export function createHttpServer(config: AppConfig, theme: LoadedTheme, api: ApiRouter, hub: ProbeStreamRelay, logger: Logger = noopLogger, listenPort: number = HTTP_PORT, monitor?: MonitorDataService): ServerHandle {
   const snapshotService = new KomariDataService(hub)
   const clientsWss = new WebSocketServer({ noServer: true })
   const streamWss = new WebSocketServer({ noServer: true })
@@ -46,6 +47,14 @@ export function createHttpServer(config: AppConfig, theme: LoadedTheme, api: Api
   server.on('upgrade', (request, socket, head) => {
     const url = new URL(request.url ?? '/', 'http://adapter.local')
     logger.info('WebSocket 请求', { method: request.method ?? 'GET', path: url.pathname })
+    if (url.pathname === '/api/ws' && monitor) {
+      streamWss.handleUpgrade(request, socket, head, (downstream) => {
+        hub.subscribe(downstream, (payload) => monitor.snapshot(payload))
+        downstream.on('close', () => hub.unsubscribe(downstream))
+        downstream.on('error', () => hub.unsubscribe(downstream))
+      })
+      return
+    }
     if (url.pathname === '/api/rpc2') {
       clientsWss.handleUpgrade(request, socket, head, (ws) => {
         clients.add(ws)
@@ -89,7 +98,8 @@ export function createHttpServer(config: AppConfig, theme: LoadedTheme, api: Api
 
   return {
     listen: async () => {
-      await new Promise<void>((resolve) => server.listen(listenPort, resolve))
+      // 测试使用临时端口时只监听回环；生产 8080 保持容器对外监听行为。
+      await new Promise<void>((resolve) => server.listen(listenPort, listenPort === HTTP_PORT ? undefined : '127.0.0.1', resolve))
     },
     close: async () => {
       for (const ws of clients) ws.close()
@@ -117,7 +127,10 @@ function serveHealthcheck(request: IncomingMessage, response: ServerResponse): b
 function serveThemeManifest(theme: LoadedTheme, request: IncomingMessage, response: ServerResponse): boolean {
   if (request.method !== 'GET' && request.method !== 'HEAD') return false
   const url = new URL(request.url ?? '/', 'http://adapter.local')
-  if (!/^\/themes\/[^/]+\/komari-theme\.json$/.test(url.pathname)) return false
+  const filename = theme.kind === 'monitor' ? 'theme.json' : 'komari-theme.json'
+  if (theme.kind === 'monitor') {
+    if (url.pathname !== `/themes/${encodeURIComponent(theme.short ?? '')}/${filename}`) return false
+  } else if (!/^\/themes\/[^/]+\/komari-theme\.json$/.test(url.pathname)) return false
   if (!theme.manifest) return false
   response.writeHead(200, {
     'Content-Type': 'application/json; charset=utf-8',
@@ -203,6 +216,7 @@ export function adminThemeSettingsHtml(theme: LoadedTheme): string {
   const repoDisplay = repoUrl.replace(/^https:\/\/github\.com\//, '').replace(/\/+$/, '')
   const frontendThemeManagement = supportsFrontendThemeManagement(theme)
   const meta = {
+    kind: theme.kind ?? 'komari',
     title: theme.title,
     short: theme.short,
     repoUrl: theme.source.repoUrl,
@@ -214,7 +228,7 @@ export function adminThemeSettingsHtml(theme: LoadedTheme): string {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>MMWX Probe Komari Theme Adapter Settings</title>
+<title>MMWX Probe Theme Adapter Settings</title>
 <style>
 :root{--bg:#eef2f7;--card:#fff;--ink:#0f172a;--muted:#64748b;--brand:#2563eb;--brand-2:#1d4ed8;--border:#e2e8f0;--accent:#6366f1}
 *{box-sizing:border-box}
@@ -264,7 +278,7 @@ textarea{min-height:110px;resize:vertical}
 <body>
 <div class="wrap">
 <header>
-<h1>MMWX Probe Komari Theme Adapter Settings</h1>
+<h1>MMWX Probe Theme Adapter Settings</h1>
 <div class="meta">
 <span>版本：<b>${htmlEscape(ADAPTER_VERSION)}</b></span>
 <span>当前主题：<b>${title}</b></span>
@@ -291,15 +305,16 @@ async function json(url,init){
 }
 function fieldValue(settings,f){return settings&&Object.prototype.hasOwnProperty.call(settings,f.key)?settings[f.key]:f.default}
 function renderField(f,settings){
- if(f.type==="title")return '<h3>'+html(label(f.name)||"设置")+'</h3>';
+  if(f.type==="title")return '<h3>'+html(label(f.label??f.name)||"设置")+'</h3>';
  if(f.type==="textbox")return '<p class="hint">'+html(label(f.name)||label(f.help)||"")+'</p>';
  if(!f.key)return "";
- const name=html(label(f.name)||f.key), help=label(f.help);
+  const name=html(label(f.label??f.name)||f.key), help=label(f.help);
  const value=fieldValue(settings,f);
  let control="";
  if(f.type==="switch"||f.type==="boolean"){control='<div class="switch-row"><label>'+name+'</label><label class="switch"><input data-key="'+html(f.key)+'" data-type="switch" type="checkbox" '+(value===true?"checked":"")+'><span class="slider"></span></label></div>'}
  else if(f.type==="select"||f.type==="radio"){control='<label>'+name+'</label><select data-key="'+html(f.key)+'" data-type="value">'+parseOptions(f.options).map((o)=>{const ov=typeof o==="object"?(o.value??o.key??o.label??o.name):o;return '<option value="'+html(ov)+'" '+(String(value)===String(ov)?"selected":"")+'>'+html(typeof o==="object"?label(o.label??o.name)||ov:o)+'</option>'}).join("")+'</select>'}
- else if(f.type==="number"||f.type==="integer"||f.type==="slider"){control='<label>'+name+'</label><input data-key="'+html(f.key)+'" data-type="number" type="number" value="'+html(value??0)+'">'}
+  else if(f.type==="number"||f.type==="integer"||f.type==="slider"){control='<label>'+name+'</label><input data-key="'+html(f.key)+'" data-type="number" type="number" step="any" '+(f.min!==undefined?'min="'+html(f.min)+'" ':'')+(f.max!==undefined?'max="'+html(f.max)+'" ':'')+'value="'+html(value??0)+'">'}
+  else if(meta.kind==="monitor"&&f.type==="text"){control='<label>'+name+'</label><textarea data-key="'+html(f.key)+'" data-type="value">'+html(value??"")+'</textarea>'}
  else if(f.type==="richtext"||f.type==="nodes"||f.type==="pingtasks"){control='<label>'+name+'</label><textarea data-key="'+html(f.key)+'" data-type="'+(f.type==="richtext"?"value":"json")+'">'+html(f.type==="richtext"?(value??""):JSON.stringify(value??[]))+'</textarea>'}
  else{control='<label>'+name+'</label><input type="text" data-key="'+html(f.key)+'" data-type="value" value="'+html(value??"")+'">'}
  return '<div class="field">'+control+(help?'<p class="hint">'+html(help)+'</p>':"")+'</div>';
@@ -309,7 +324,7 @@ function collect(){
  for(const el of app.querySelectorAll("[data-key]")){
   const key=el.getAttribute("data-key"), type=el.getAttribute("data-type");
   if(type==="switch")out[key]=el.checked;
-  else if(type==="number")out[key]=Number(el.value);
+   else if(type==="number"){if(!el.value.trim()||!el.checkValidity())throw new Error(key+" 的数值不在允许范围内");out[key]=Number(el.value)}
   else if(type==="json"){try{out[key]=JSON.parse(el.value||"[]")}catch{throw new Error(key+" 不是有效 JSON")}}
   else out[key]=el.value;
  }
@@ -318,12 +333,12 @@ function collect(){
 async function boot(){
  try{
  const pub=await json("/api/public");
- const theme=pub.theme||meta.short||"current";
- const manifest=await json("/themes/"+encodeURIComponent(theme)+"/komari-theme.json").catch(()=>null);
- const cfg=manifest&&manifest.configuration;
+  const theme=meta.kind==="monitor"?meta.short:(pub.theme||meta.short||"current");
+  const manifest=await json("/themes/"+encodeURIComponent(theme)+(meta.kind==="monitor"?"/theme.json":"/komari-theme.json")).catch(()=>null);
+  const cfg=manifest&&(meta.kind==="monitor"?{type:"managed",data:manifest.config}:manifest.configuration);
  const settings=await json("/api/admin/theme/settings").catch(()=>pub.theme_settings||{});
   const me=await json("/api/me").catch(()=>null);
-  verified=Boolean(me&&me.logged_in);
+   verified=Boolean(me&&(me.logged_in||me.authed));
   if(!cfg){
    app.innerHTML=authCard()+'<div class="card"><div class="empty"><h2>当前主题未声明可配置项</h2>'+(meta.frontendThemeManagement?'<p>当前主题提供前端配置页面，请先完成管理员验证，再访问 <a href="/?view=theme-manage">/?view=theme-manage</a> 进行设置。</p>':"")+'</div></div>';
    attachAuth();

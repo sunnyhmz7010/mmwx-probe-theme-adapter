@@ -2,6 +2,7 @@ import WebSocket from 'ws'
 
 import type { ProbeHistoryBuffer } from './history-buffer.js'
 import type { ProbePayload, ProbeSeriesPayload, SeriesQuery } from './types.js'
+import { serverIdentity } from './identity.js'
 
 const MAX_FRAME_AGE_MS = 12_000
 const RECONNECT_MAX_MS = 30_000
@@ -37,7 +38,12 @@ export class ProbeStreamRelay {
   private latestAt = 0
   private snapshotRequest: Promise<ProbePayload> | null = null
   private readonly clients = new Set<WebSocket>()
+  private readonly transforms = new Map<WebSocket, (payload: ProbePayload) => unknown>()
   private readonly wsFactory: WebSocketFactory
+  private topology = ''
+  private revision = 0
+
+  public get topologyRevision(): number { return this.revision }
 
   public constructor(
     private readonly origin: ProbeOrigin,
@@ -64,7 +70,8 @@ export class ProbeStreamRelay {
     return this.origin.fetchSeries(query)
   }
 
-  public subscribe(downstream: WebSocket): void {
+  public subscribe(downstream: WebSocket, transform?: (payload: ProbePayload) => unknown): void {
+    if (transform) this.transforms.set(downstream, transform)
     this.clients.add(downstream)
     const latest = this.latestPayload
     if (latest !== null && this.frameAgeMs() <= MAX_FRAME_AGE_MS) {
@@ -76,6 +83,7 @@ export class ProbeStreamRelay {
 
   public unsubscribe(downstream: WebSocket): void {
     this.clients.delete(downstream)
+    this.transforms.delete(downstream)
   }
 
   public close(): void {
@@ -87,6 +95,7 @@ export class ProbeStreamRelay {
       }
     }
     this.clients.clear()
+    this.transforms.clear()
     this.cancelReconnect()
     this.stopWatchdog()
     this.closeUpstream()
@@ -119,6 +128,11 @@ export class ProbeStreamRelay {
   }
 
   private remember(payload: ProbePayload): void {
+    const topology = JSON.stringify(payload.servers.map((server, index) => [serverIdentity(server, index), server.hidden === true]))
+    if (topology !== this.topology) {
+      this.topology = topology
+      this.revision += 1
+    }
     this.latestPayload = payload
     this.latestAt = Date.now()
     // 每一帧（WS 实时帧或 HTTP 快照）同时喂给历史缓冲，形成逐次密度采样。
@@ -130,7 +144,8 @@ export class ProbeStreamRelay {
 
   private sendTo(client: WebSocket, payload: ProbePayload): void {
     try {
-      client.send(JSON.stringify(payload))
+      const transform = this.transforms.get(client)
+      client.send(JSON.stringify(transform ? transform(payload) : payload))
     } catch {
       try {
         client.close(1011, 'send failed')

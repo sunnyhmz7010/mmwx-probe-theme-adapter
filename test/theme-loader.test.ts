@@ -33,6 +33,7 @@ test('reads Komari theme settings defaults from komari-theme.json', async () => 
   try {
     await assert.doesNotReject(() => readThemeMetadata(repoDir))
     await assert.deepEqual(await readThemeMetadata(repoDir), {
+      kind: 'komari',
       short: 'Glassmorphism',
       manifest,
       themeSettings: {
@@ -43,5 +44,32 @@ test('reads Komari theme settings defaults from komari-theme.json', async () => 
     })
   } finally {
     await rm(repoDir, { recursive: true, force: true })
+  }
+})
+
+test('detects Monitor manifests and preserves typed config defaults', async () => {
+  const manifest = { short: 'doraemon', config: [
+    { type: 'title', label: '基础设置' },
+    { key: 'enabled', type: 'boolean', default: true },
+    { key: 'interval', type: 'number', default: 3, min: 1, max: 60 },
+  ] }
+  const directory = await tempRepo({ 'theme.json': JSON.stringify(manifest) })
+  try {
+    assert.deepEqual(await readThemeMetadata(directory), {
+      kind: 'monitor', short: 'doraemon', manifest, themeSettings: { enabled: true, interval: 3 },
+    })
+    await writeFile(path.join(directory, 'komari-theme.json'), '{"short":"old"}')
+    assert.equal((await readThemeMetadata(directory)).kind, 'komari')
+  } finally {
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+
+test('rejects malformed Monitor manifest rather than silently starting with wrong protocol', async () => {
+  const directory = await tempRepo({ 'theme.json': '{"short":"broken"}' })
+  try {
+    await assert.rejects(readThemeMetadata(directory), /short and config/)
+  } finally {
+    await rm(directory, { recursive: true, force: true })
   }
 })

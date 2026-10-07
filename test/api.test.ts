@@ -102,7 +102,7 @@ async function withApi(service: KomariDataService, run: (baseUrl: string) => Pro
       response.end(JSON.stringify({ error: error instanceof Error ? error.message : 'unknown' }))
     })
   })
-  server.listen(0)
+  server.listen(0, '127.0.0.1')
   await once(server, 'listening')
   const address = server.address()
   assert.ok(address && typeof address === 'object')

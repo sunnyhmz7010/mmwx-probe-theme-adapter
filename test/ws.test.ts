@@ -27,7 +27,7 @@ function config(overrides: Partial<AppConfig> = {}): AppConfig {
 
 async function reservePort(): Promise<number> {
   const server = http.createServer()
-  server.listen(0)
+  server.listen(0, '127.0.0.1')
   await once(server, 'listening')
   const address = server.address()
   assert.ok(address && typeof address === 'object')
@@ -141,7 +141,7 @@ test('serves static assets and SPA fallback safely', async () => {
     const admin = await httpGet(baseUrl, '/admin')
     assert.equal(admin.status, 200)
     assert.match(admin.contentType ?? '', /html/)
-    assert.match(admin.body, /MMWX Probe Komari Theme Adapter Settings/)
+    assert.match(admin.body, /MMWX Probe Theme Adapter Settings/)
     assert.match(admin.body, /\/api\/admin\/theme\/settings/)
 
     const adhesiveAdmin = await httpGet(baseUrl, '/admin/dashboard')
