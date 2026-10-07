@@ -1,6 +1,6 @@
 {
   "name": "mmwx-probe-theme-adapter",
-  "version": "2.1.8",
+  "version": "3.0.0",
   "private": true,
   "type": "module",
   "scripts": {
