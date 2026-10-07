@@ -1,6 +1,6 @@
 <div align="center">
   <h1>MMWX Probe Theme Adapter</h1>
-  <p>以妙妙屋 X 为唯一数据源，驱动 Komari 和 Monitor 主题页面。</p>
+  <p>以妙妙屋 X 为数据源的多主题探针适配器，支持 Komari 和极简探针主题</p>
 </div>
 
 <p align="center">
