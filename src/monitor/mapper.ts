@@ -52,6 +52,9 @@ export function toMonitorNode(server: ProbeServer, index: number, updatedAt?: Pr
     monthTx = trafficMode === 'down' ? 0 : billed
     monthRx = trafficMode === 'down' ? billed : 0
   }
+  // MMWX 的累计计数仅覆盖当前开机周期，不能混用计费周期字段。
+  const totalTx = number(server.cumulative_up, server.boot_traffic_up, server.net_total_up, server.totalUpload)
+  const totalRx = number(server.cumulative_down, server.boot_traffic_down, server.net_total_down, server.totalDownload)
   const renewal = text(server.renewal_cycle)
   const billingCycle = ({ month: 'monthly', quarter: 'quarterly', half_year: 'semiannual', year: 'yearly' } as Record<string, string>)[renewal ?? '']
     ?? ({ '-1': 'once', '30': 'monthly', '90': 'quarterly', '180': 'semiannual', '365': 'yearly', '730': 'biennial', '1095': 'triennial', '1825': '60m' } as Record<string, string>)[String(number(server.billing_cycle))]
@@ -63,13 +66,18 @@ export function toMonitorNode(server: ProbeServer, index: number, updatedAt?: Pr
     mem_total: base.ram?.total,
     disk_used: base.disk?.used,
     disk_total: base.disk?.total,
-    swap_used: number(server.swap),
-    swap_total: number(server.swap_total),
+    // Monitor 主题要求这些字段为数字；上游缺失时仅在此协议层用 0 占位。
+    swap_used: number(server.swap) ?? 0,
+    swap_total: number(server.swap_total) ?? 0,
     net_rx: base.network?.down,
     net_tx: base.network?.up,
+    total_rx: totalRx,
+    total_tx: totalTx,
+    month_rx: monthRx,
+    month_tx: monthTx,
     tcp: number(server.tcp_connections),
     udp: number(server.udp_connections),
-    procs: number(server.process),
+    procs: number(server.process) ?? 0,
     uptime: number(server.uptime),
     load: base.load?.load1 === undefined ? undefined : [base.load.load1, base.load.load5, base.load.load15].filter((v): v is number => v !== undefined),
   }
@@ -103,9 +111,8 @@ export function toMonitorNode(server: ProbeServer, index: number, updatedAt?: Pr
     month_rx: monthRx,
     month_used: billed,
     month_start: seconds(server.period_start),
-    // MMWX 的累计计数仅覆盖当前开机周期，不能混用计费周期字段。
-    total_tx: number(server.cumulative_up, server.boot_traffic_up, server.net_total_up, server.totalUpload),
-    total_rx: number(server.cumulative_down, server.boot_traffic_down, server.net_total_down, server.totalDownload),
+    total_tx: totalTx,
+    total_rx: totalRx,
   }
 }
 

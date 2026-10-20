@@ -33,6 +33,10 @@ test('Monitor snapshot preserves billing semantics, omits private fields and kee
   assert.equal(nodes[0].month_tx, 30)
   assert.equal(nodes[0].month_rx, 120)
   assert.equal(nodes[0].total_tx, 1000)
+  assert.equal(nodes[0].metrics?.month_tx, nodes[0].month_tx)
+  assert.equal(nodes[0].metrics?.month_rx, nodes[0].month_rx)
+  assert.equal(nodes[0].metrics?.total_tx, nodes[0].total_tx)
+  assert.equal(nodes[0].metrics?.total_rx, undefined)
   assert.equal(nodes[0].billing_cycle, 'yearly')
   assert.equal(nodes[0].currency, 'USD')
   assert.equal(nodes[1].metrics, null)
@@ -41,6 +45,29 @@ test('Monitor snapshot preserves billing semantics, omits private fields and kee
   const adjusted = toMonitorSnapshot({ servers: [{ id: 1, traffic_used: 99, traffic_stats_mode: 'download' }] }).nodes[0]
   assert.equal(adjusted.month_rx, 99)
   assert.equal(adjusted.month_tx, 0)
+  assert.equal(adjusted.metrics?.month_rx, adjusted.month_rx)
+  assert.equal(adjusted.metrics?.month_tx, adjusted.month_tx)
+})
+
+test('Monitor metrics keep available resources when upstream omits swap and process counts', () => {
+  const server: ProbePayload['servers'][number] = {
+    id: 1, cpu_pct: 7, mem_used: 20, mem_total: 100, disk_used: 30, disk_total: 200,
+    upload_speed: 4, download_speed: 5, tcp_connections: 6, udp_connections: 2, uptime: 3600,
+    load: [0.1, 0.2, 0.3], cumulative_up: 1000, cumulative_down: 2000,
+    traffic_used_up: 20, traffic_used_down: 80, traffic_used: 150,
+  }
+  const node = toMonitorSnapshot({ servers: [server] }).nodes[0]
+  assert.deepEqual(node.metrics, {
+    cpu: 7, mem_used: 20, mem_total: 100, disk_used: 30, disk_total: 200,
+    swap_used: 0, swap_total: 0, net_rx: 5, net_tx: 4, tcp: 6, udp: 2, procs: 0,
+    uptime: 3600, load: [0.1, 0.2, 0.3], total_tx: 1000, total_rx: 2000, month_tx: 30, month_rx: 120,
+  })
+  const [reported, zero] = toMonitorSnapshot({ servers: [
+    { ...server, id: 2, swap: 32, swap_total: 128, process: 12 },
+    { ...server, id: 3, swap: 0, swap_total: 0, process: 0 },
+  ] }).nodes
+  assert.deepEqual([reported.metrics?.swap_used, reported.metrics?.swap_total, reported.metrics?.procs], [32, 128, 12])
+  assert.deepEqual([zero.metrics?.swap_used, zero.metrics?.swap_total, zero.metrics?.procs], [0, 0, 0])
 })
 
 test('Monitor history clamps range, samples real points, shares cache and follows node identity', async () => {
@@ -114,7 +141,12 @@ test('Monitor HTTP, shared realtime stream and authenticated configuration readb
   await once(reservation, 'listening')
   const port = (reservation.address() as { port: number }).port
   await new Promise<void>(resolve => reservation.close(() => resolve()))
-  const payload: ProbePayload = { title: 'MMWX Test', updatedAt: Date.now(), servers: [{ id: 7, name: 'Tokyo', cpu: 7 }, { id: 8, hidden: true }] }
+  const payload: ProbePayload = { title: 'MMWX Test', updatedAt: Date.now(), servers: [
+    { id: 7, name: 'Tokyo', cpu: 7, mem_used: 20, mem_total: 100, disk_used: 30, disk_total: 200,
+      upload: 4, download: 5, tcp_connections: 6, udp_connections: 2, uptime: 3600, load: [0.1, 0.2, 0.3],
+      cumulative_up: 1000, cumulative_down: 2000, traffic_used_up: 20, traffic_used_down: 80, traffic_used: 150 },
+    { id: 8, hidden: true },
+  ] }
   let snapshots = 0
   const source = {
     fetchProbe: async () => { snapshots += 1; return payload }, fetchSeries: async () => ({}),
@@ -135,8 +167,17 @@ test('Monitor HTTP, shared realtime stream and authenticated configuration readb
     const me = await (await fetch(`${base}/api/me`)).json() as { authed: boolean; site_name: string }
     assert.equal(me.authed, false)
     assert.equal(me.site_name, 'MMWX Test')
-    const nodes = await (await fetch(`${base}/api/nodes`)).json() as { nodes: unknown[] }
+    const nodes = await (await fetch(`${base}/api/nodes`)).json() as ReturnType<typeof toMonitorSnapshot>
     assert.equal(nodes.nodes.length, 1)
+    const expectedMetrics = {
+      cpu: 7, mem_used: 20, mem_total: 100, disk_used: 30, disk_total: 200,
+      swap_used: 0, swap_total: 0, net_rx: 5, net_tx: 4, tcp: 6, udp: 2, procs: 0,
+      uptime: 3600, load: [0.1, 0.2, 0.3], total_tx: 1000, total_rx: 2000, month_tx: 30, month_rx: 120,
+    }
+    assert.deepEqual(nodes.nodes[0].metrics, expectedMetrics)
+    for (const field of ['total_tx', 'total_rx', 'month_tx', 'month_rx'] as const) {
+      assert.equal(nodes.nodes[0].metrics?.[field], nodes.nodes[0][field])
+    }
     const frames = await Promise.all(['/api/ws', '/api/ws', '/api/stream'].map(async route => {
       const ws = new WebSocket(base.replace('http:', 'ws:') + route)
       sockets.push(ws)
@@ -145,6 +186,8 @@ test('Monitor HTTP, shared realtime stream and authenticated configuration readb
     }))
     assert.deepEqual(frames[0], nodes)
     assert.deepEqual(frames[1], nodes)
+    assert.deepEqual(frames[0].nodes[0].metrics, expectedMetrics)
+    assert.deepEqual(frames[1].nodes[0].metrics, expectedMetrics)
     assert.deepEqual(frames[2], payload)
     assert.equal(snapshots, 1)
     assert.doesNotMatch(JSON.stringify(frames), /secret-probe/)
